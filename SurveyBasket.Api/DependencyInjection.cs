@@ -54,6 +54,7 @@ namespace SurveyBasket.Api
             services.AddScoped<IQuestionService, QuestionService>();
             services.AddScoped<IVoteService, VoteService>();
             services.AddScoped<IResultService, ResultService>();
+            services.AddHybridCache();
 
             return services;
         }

@@ -1,13 +1,17 @@
-﻿using SurveyBasket.Api.Contracts.Answers;
+﻿using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Caching.Memory;
+using SurveyBasket.Api.Contracts.Answers;
 using SurveyBasket.Api.Contracts.Questions;
 using SurveyBasket.Api.Errors;
 
 namespace SurveyBasket.Api.Services
 {
-    public class QuestionService(ApplicationDbContext dbContext) : IQuestionService
+    public class QuestionService(ApplicationDbContext dbContext, HybridCache hybridCache, ILogger<QuestionService> logger) : IQuestionService
     {
         private readonly ApplicationDbContext _dbContext = dbContext;
-
+        private readonly HybridCache _hybridCache = hybridCache;
+        private readonly ILogger<QuestionService> _logger = logger;
+        private const string _cachePrefix = "availableQuestions";
         public async Task<Result<IEnumerable<QuestionResponse>>> GetAllAsync(int pollId, CancellationToken cancellationToken = default)
         {
             var pollIsExists = await _dbContext.Polls.AnyAsync(p => p.Id == pollId, cancellationToken: cancellationToken);
@@ -53,16 +57,16 @@ namespace SurveyBasket.Api.Services
 
 
             #region Get Question As QuestionReponse and Include Answers that are isActive Only
-            //Method1 :
-            var questions = await _dbContext.Questions
-                   .Where(q => q.PollId == pollId && q.IsActive)
-                   //ProjectToType :  will (1.select specefic column based on QuestionReponse , 2. include be default ,3. mapping to QuesionResponse)
-                   // it will include all Answers by default , writing Include() will be ignored  ,
-                   // if you want a  different behaviour like including  Answers that are isActive only ,
-                   // you should first tell mapster by adding configurations in MappingConfigurations 
-                   .ProjectToType<QuestionResponse>()
-                   .AsNoTracking()
-                   .ToListAsync(cancellationToken: cancellationToken);
+            ////Method1 :
+            //var questions = await _dbContext.Questions
+            //       .Where(q => q.PollId == pollId && q.IsActive)
+            //       //ProjectToType :  will (1.select specific column based on QuestionResponse , 2. include be default ,3. mapping to QuesionResponse)
+            //       // it will include all Answers by default , writing Include() will be ignored  ,
+            //       // if you want a  different behavior like including  Answers that are isActive only ,
+            //       // you should first tell mapster by adding configurations in MappingConfigurations 
+            //       .ProjectToType<QuestionResponse>()
+            //       .AsNoTracking()
+            //       .ToListAsync(cancellationToken: cancellationToken);
 
             ///Method2 :
             //var questions = await _dbContext.Questions
@@ -78,7 +82,68 @@ namespace SurveyBasket.Api.Services
             //    .ToListAsync(cancellationToken: cancellationToken);
             #endregion
 
-            return Result.Success<IEnumerable<QuestionResponse>>(questions);
+            //Get Question After implement Caching
+            var cacheKey = $"{_cachePrefix}-{pollId}";
+
+            #region Distributed Cache
+            //var cachedQuestions = await _cacheService.GetAsync<IEnumerable<QuestionResponse>>(cacheKey, cancellationToken);
+            //IEnumerable<QuestionResponse> questions = [];
+            //if(cachedQuestions is null)
+            //{
+            //    _logger.LogInformation("Select from Questions From Database");
+
+            //    questions = await _dbContext.Questions
+            //       .Where(q => q.PollId == pollId && q.IsActive)
+            //       .ProjectToType<QuestionResponse>()
+            //       .AsNoTracking()
+            //       .ToListAsync(cancellationToken: cancellationToken);
+
+            //    await _cacheService.SetAsync(cacheKey, questions, cancellationToken);
+
+            //}
+            //else
+            //{
+            //    _logger.LogInformation("Get from Questions From Cache");
+
+            //    questions = cachedQuestions;
+            //}
+
+            ////var questions = await _cacheService.GetAsync<IEnumerable<QuestionResponse>>(cacheKey, cancellationToken);
+            ////if (questions is null)
+            ////{
+            ////    questions = await _dbContext.Questions
+            ////       .Where(q => q.PollId == pollId && q.IsActive)
+            ////       .ProjectToType<QuestionResponse>()
+            ////       .AsNoTracking()
+            ////       .ToListAsync(cancellationToken: cancellationToken);
+
+            ////   await _cacheService.SetAsync(cacheKey, questions,cancellationToken);
+            ////} 
+            #endregion
+
+            //hybrid Cache
+            var questions = await _hybridCache.GetOrCreateAsync<IEnumerable<QuestionResponse>>(
+                cacheKey,
+                async cacheEntry =>
+                {
+                    return await _dbContext.Questions
+                   .Where(q => q.PollId == pollId && q.IsActive)
+                   .Select(q => new QuestionResponse(
+                       q.Id,
+                       q.Content,
+                       q.Answers.Where(a => a.IsActive).Select(a => new AnswerResponse(a.Id, a.Content))
+                   ))
+                   .AsNoTracking()
+                   .ToListAsync(cancellationToken: cancellationToken);
+                },
+                new HybridCacheEntryOptions
+                {
+                    Expiration = TimeSpan.FromMinutes(5)
+                }
+
+                );
+
+            return Result.Success(questions!);
         }
 
         public async Task<Result<QuestionResponse>> GetAsync(int pollId, int id, CancellationToken cancellationToken = default)
@@ -127,6 +192,8 @@ namespace SurveyBasket.Api.Services
             await _dbContext.Questions.AddAsync(question, cancellationToken);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
+            await _hybridCache.RemoveAsync($"{_cachePrefix}-{pollId}");
+
             return Result.Success(question.Adapt<QuestionResponse>());
         }
         public async Task<Result> UpdateAsync(int pollId, int id, QuestionsRequest request, CancellationToken cancellation = default)
@@ -138,7 +205,7 @@ namespace SurveyBasket.Api.Services
             var questionIsExistsinThisPollAfterEditContent = await _dbContext.Questions.AnyAsync(q =>
             q.PollId == pollId &&
             q.Content == request.Content &&
-            q.Id != id );
+            q.Id != id);
 
             if (questionIsExistsinThisPollAfterEditContent) // true => error becuase will have e.g Question2 and another record also named Question2
                 return Result.Failure(QuestionErrors.DuplicatedQuestionContent);
@@ -164,10 +231,10 @@ namespace SurveyBasket.Api.Services
             /// get old answers which are in db
             /// request.Answers have "new + old"
             /// remove old , and now you have new answers to add 
-            
+
             var currentAnswers = question.Answers.Select(a => a.Content).ToList();
 
-            var newAnswers =  request.Answers.Except(currentAnswers).ToList();
+            var newAnswers = request.Answers.Except(currentAnswers).ToList();
 
             newAnswers.ForEach(answer =>
             {
@@ -185,9 +252,11 @@ namespace SurveyBasket.Api.Services
 
             await _dbContext.SaveChangesAsync(cancellation);
 
+            await _hybridCache.RemoveAsync($"{_cachePrefix}-{pollId}", cancellation);
+
             return Result.Success();
 
-    
+
         }
 
         public async Task<Result> ToggleStatusAsync(int pollId, int id, CancellationToken cancellationToken = default)
@@ -202,9 +271,11 @@ namespace SurveyBasket.Api.Services
 
             await _dbContext.SaveChangesAsync(cancellationToken);
 
+            await _hybridCache.RemoveAsync($"{_cachePrefix}-{pollId}", cancellationToken);
+
             return Result.Success();
         }
 
-       
+
     }
 }

@@ -10,6 +10,21 @@ namespace SurveyBasket.Api
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            /* builder.Services.AddOutputCache(option =>
+             {
+                 option.AddPolicy("polls",
+                     policyOption => policyOption
+                     .Cache()
+                     .Expire(TimeSpan.FromSeconds(60))
+                     .Tag("availableQuestions")
+
+                     );
+             });*/
+
+
+            //builder.Services.AddMemoryCache();
+            //builder.Services.AddDistributedMemoryCache();
+            //builder.Services.AddScoped<ICacheService, CacheService>();
 
             //builder.Services.AddIdentityApiEndpoints<ApplicationUser>()
             //    .AddEntityFrameworkStores<ApplicationDbContext>();
@@ -20,7 +35,6 @@ namespace SurveyBasket.Api
             builder.Host.UseSerilog((context, configuration) =>  
                 configuration.ReadFrom.Configuration(context.Configuration)
             );
-            Console.WriteLine(builder.Environment.EnvironmentName);
             var app = builder.Build();
 
             // Configure the HTTP request pipeline.
@@ -36,6 +50,8 @@ namespace SurveyBasket.Api
             app.UseCors();
 
             app.UseAuthorization();
+
+            //app.UseOutputCache();
             //app.MapIdentityApi<ApplicationUser>();
 
             app.MapControllers();

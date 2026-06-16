@@ -15,7 +15,7 @@ namespace SurveyBasket.Api.Mapping
 
             config.NewConfig<Question, QuestionResponse>()
                 .Map(dest => dest.Answers, src => src.Answers.Where(a => a.IsActive)
-                /*.Select(a => new AnswerResponse(a.Id,a.Content))*/);
+                .Select(a => new AnswerResponse(a.Id, a.Content)));
         }
     }
 }

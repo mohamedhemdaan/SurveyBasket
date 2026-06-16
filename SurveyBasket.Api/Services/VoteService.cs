@@ -1,9 +1,10 @@
-﻿using SurveyBasket.Api.Contracts.Votes;
+﻿using Microsoft.AspNetCore.OutputCaching;
+using SurveyBasket.Api.Contracts.Votes;
 using SurveyBasket.Api.Errors;
 
 namespace SurveyBasket.Api.Services
 {
-    public class VoteService(ApplicationDbContext dbContext) : IVoteService
+    public class VoteService(ApplicationDbContext dbContext ) : IVoteService
     {
         private readonly ApplicationDbContext _dbContext = dbContext;
 
@@ -38,6 +39,7 @@ namespace SurveyBasket.Api.Services
 
             await _dbContext.Votes.AddAsync(vote, cancellationToken);
             await _dbContext.SaveChangesAsync(cancellationToken);
+
 
             return Result.Success();
         }
