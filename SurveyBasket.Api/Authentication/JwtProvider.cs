@@ -12,8 +12,6 @@ namespace SurveyBasket.Api.Authentication
 
         public (string token, int expiresIn) GenerateToken(ApplicationUser user)
         {
-
-
             Claim[] claims =
             [
                 new(JwtRegisteredClaimNames.Sub,user.Id),

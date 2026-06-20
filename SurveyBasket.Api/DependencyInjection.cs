@@ -10,6 +10,9 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using SurveyBasket.Api.Errors;
 using SurveyBasket.Api.Contracts.Votes;
+using SurveyBasket.Api.Settings;
+using Microsoft.AspNetCore.Identity.UI.Services;
+using Hangfire;
 
 namespace SurveyBasket.Api
 {
@@ -37,7 +40,7 @@ namespace SurveyBasket.Api
 
             var connectionString = configuration.GetConnectionString("DefaultConnection") ??
               throw new InvalidOperationException("Connection String 'DefaultConnection' not found");
-            
+
             services.AddDbContext<ApplicationDbContext>(options =>
                  options.UseSqlServer(connectionString));
 
@@ -56,6 +59,12 @@ namespace SurveyBasket.Api
             services.AddScoped<IResultService, ResultService>();
             services.AddHybridCache();
 
+            services.Configure<MailSettings>(configuration.GetSection(nameof(MailSettings)));
+            services.AddScoped<IEmailSender, EmailService>();
+            //services.AddHttpContextAccessor();
+
+            services.AddBackgroundJobs(configuration);
+            services.AddScoped<INotificationService, NotificationService>();
             return services;
         }
 
@@ -75,7 +84,7 @@ namespace SurveyBasket.Api
             mappingConfig.Scan(Assembly.GetExecutingAssembly());
             services.AddSingleton<IMapper>(new Mapper(mappingConfig));
 
-           
+
             return services;
         }
         private static IServiceCollection AddFluentValidationConfig(this IServiceCollection services)
@@ -88,12 +97,13 @@ namespace SurveyBasket.Api
             return services;
         }
 
-        private static IServiceCollection AddAuthConfig(this IServiceCollection services,IConfiguration configuration)
+        private static IServiceCollection AddAuthConfig(this IServiceCollection services, IConfiguration configuration)
         {
             services.AddSingleton<IJwtProvider, JwtProvider>();
 
             services.AddIdentity<ApplicationUser, IdentityRole>()
-                .AddEntityFrameworkStores<ApplicationDbContext>();
+                .AddEntityFrameworkStores<ApplicationDbContext>()
+                .AddDefaultTokenProviders();
 
 
             //services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
@@ -123,7 +133,27 @@ namespace SurveyBasket.Api
                 };
             });
 
+            services.Configure<IdentityOptions>(options =>
+            {
+                options.Password.RequiredLength = 8;
+                options.User.RequireUniqueEmail = true;
+                options.SignIn.RequireConfirmedEmail = true;
+            });
 
+            return services;
+        }
+
+        private static IServiceCollection AddBackgroundJobs(this IServiceCollection services, IConfiguration configuration)
+        {
+            // Add Hangfire services.
+            services.AddHangfire(config => config
+                    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+                    .UseSimpleAssemblyNameTypeSerializer()
+                    .UseRecommendedSerializerSettings()
+                    .UseSqlServerStorage(configuration.GetConnectionString("HangfireConnection")));
+
+            // Add the processing server as IHostedService
+            services.AddHangfireServer();
             return services;
         }
     }

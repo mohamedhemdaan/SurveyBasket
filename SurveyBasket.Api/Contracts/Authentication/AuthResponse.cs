@@ -1,4 +1,4 @@
-﻿namespace SurveyBasket.Api.Contracts.Authorization
+﻿namespace SurveyBasket.Api.Contracts.Authentication
 {
     public record AuthResponse(
         string Id,

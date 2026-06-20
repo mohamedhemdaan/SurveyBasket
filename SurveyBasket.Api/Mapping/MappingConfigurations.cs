@@ -13,9 +13,12 @@ namespace SurveyBasket.Api.Mapping
             config.NewConfig<QuestionsRequest, Question>()
                 .Map(dest => dest.Answers, src => src.Answers.Select(AnswerContent => new Answer { Content = AnswerContent }));
 
-            config.NewConfig<Question, QuestionResponse>()
-                .Map(dest => dest.Answers, src => src.Answers.Where(a => a.IsActive)
-                .Select(a => new AnswerResponse(a.Id, a.Content)));
+            //config.NewConfig<Question, QuestionResponse>()
+            //    .Map(dest => dest.Answers, src => src.Answers.Where(a => a.IsActive)
+            //    .Select(a => new AnswerResponse(a.Id, a.Content)));
+
+            config.NewConfig<RegisterRequest, ApplicationUser>()
+                .Map(dest => dest.UserName, src => src.Email.Split("@", StringSplitOptions.None)[0]); 
         }
     }
 }
